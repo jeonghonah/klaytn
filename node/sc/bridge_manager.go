@@ -250,13 +250,13 @@ func (bi *BridgeInfo) UpdateInfo() error {
 		return ErrNoBridgeInfo
 	}
 
-	rn, err := bi.bridge.RequestNonce(nil)
+	rn, err := bi.bridge.RequestNonces(nil, bi.account.address)
 	if err != nil {
 		return err
 	}
 	bi.UpdateRequestNonce(rn)
 
-	hn, err := bi.bridge.HandleNonce(nil)
+	hn, err := bi.bridge.HandleNonces(nil, bi.account.address)
 	if err != nil {
 		return err
 	}

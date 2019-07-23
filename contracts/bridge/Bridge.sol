@@ -27,8 +27,8 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
 
     using SafeMath for uint256;
 
-    uint64 public requestNonce;
-    uint64 public handleNonce;
+    mapping (address => uint64) public requestNonces; // <owner, nonce>
+    mapping (address => uint64) public handleNonces; // <owner, nonce>
 
     uint64 public lastHandledRequestBlockNumber;
 
@@ -114,11 +114,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         external
         onlyOwner
     {
-        require(handleNonce == _requestNonce, "mismatched handle / request nonce");
+        require(handleNonces[msg.sender] == _requestNonce, "mismatched handle / request nonce");
 
-        emit HandleValueTransfer(_to, TokenKind.ERC20, _contractAddress, _amount, handleNonce);
+        emit HandleValueTransfer(_to, TokenKind.ERC20, _contractAddress, _amount, handleNonces[msg.sender]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
-        handleNonce++;
+        handleNonces[msg.sender]++;
 
         if (modeMintBurn) {
             ERC20Mintable(_contractAddress).mint(_to, _amount);
@@ -137,11 +137,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         external
         onlyOwner
     {
-        require(handleNonce == _requestNonce, "mismatched handle / request nonce");
+        require(handleNonces[msg.sender] == _requestNonce, "mismatched handle / request nonce");
 
-        emit HandleValueTransfer(_to, TokenKind.KLAY, address(0), _amount, handleNonce);
+        emit HandleValueTransfer(_to, TokenKind.KLAY, address(0), _amount, handleNonces[msg.sender]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
-        handleNonce++;
+        handleNonces[msg.sender]++;
 
         _to.transfer(_amount);
     }
@@ -158,11 +158,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         external
         onlyOwner
     {
-        require(handleNonce == _requestNonce, "mismatched handle / request nonce");
+        require(handleNonces[msg.sender] == _requestNonce, "mismatched handle / request nonce");
 
-        emit HandleValueTransfer(_to, TokenKind.ERC721, _contractAddress, _uid, handleNonce);
+        emit HandleValueTransfer(_to, TokenKind.ERC721, _contractAddress, _uid, handleNonces[msg.sender]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
-        handleNonce++;
+        handleNonces[msg.sender]++;
 
         if (modeMintBurn) {
             ERC721MetadataMintable(_contractAddress).mintWithTokenURI(_to, _uid, _tokenURI);
@@ -184,11 +184,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             msg.value.sub(_feeLimit),
             address(0),
             _to,
-            requestNonce,
+            requestNonces[owner()],
             "",
             fee
         );
-        requestNonce++;
+        requestNonces[owner()]++;
     }
 
     // () requests transfer KLAY to msg.sender address on relative chain.
@@ -220,11 +220,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             _amount,
             _contractAddress,
             _to,
-            requestNonce,
+            requestNonces[owner()],
             "",
             fee
         );
-        requestNonce++;
+        requestNonces[owner()]++;
     }
 
     // Receiver function of ERC20 token for 1-step deposits to the Bridge
@@ -262,11 +262,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             _uid,
             _contractAddress,
             _to,
-            requestNonce,
+            requestNonces[owner()],
             uri,
             0
         );
-        requestNonce++;
+        requestNonces[owner()]++;
     }
 
     // Receiver function of ERC721 token for 1-step deposits to the Bridge

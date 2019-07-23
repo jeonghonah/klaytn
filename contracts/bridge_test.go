@@ -368,6 +368,6 @@ func TestBridgePublicVariables(t *testing.T) {
 	bridgeOwner, err := b.Owner(nil)
 	assert.Equal(t, bridgeAccount.From, bridgeOwner)
 
-	rnonce, err := b.RequestNonce(nil)
+	rnonce, err := b.RequestNonces(nil, bridgeOwner)
 	assert.Equal(t, uint64(0), rnonce)
 }
