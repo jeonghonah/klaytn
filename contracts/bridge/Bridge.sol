@@ -27,8 +27,12 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
 
     using SafeMath for uint256;
 
-    mapping (address => uint64) public requestNonces; // <owner, nonce>
-    mapping (address => uint64) public handleNonces; // <owner, nonce>
+    mapping (address => uint64) public requestNonces; // <signer, nonce>
+    mapping (address => uint64) public handleNonces;  // <signer, nonce>
+    mapping (address => uint64) public signers;       // <signer, nonce>
+    mapping (uint64 => mapping (address => uint64)) public signedTxs; // <nonce, <singer, vote>>
+    mapping (uint64 => uint64) public signedTxsCount; // <tx, nonce>
+    uint64 public signerThreshold = 1;
 
     uint64 public lastHandledRequestBlockNumber;
 
@@ -93,6 +97,21 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         counterpartBridge = _bridge;
     }
 
+    // setSignerThreshold sets signer threshold.
+    function setSignerThreshold(uint64 threshold) external onlyOwner {
+        signerThreshold = threshold;
+    }
+
+    // registerSigner registers new signer.
+    function registerSigner(address signer) external onlyOwner {
+        signers[signer] = 1;
+    }
+
+    // deregisterSigner deregisters a signer.
+    function deregisterSigner(address signer) external onlyOwner {
+        delete signers[signer];
+    }
+
     // registerToken can update the allowed token with the counterpart token.
     function registerToken(address _token, address _cToken) external onlyOwner {
         allowedTokens[_token] = _cToken;
@@ -101,6 +120,24 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
     // deregisterToken can remove the token in allowedToken list.
     function deregisterToken(address _token) external onlyOwner {
         delete allowedTokens[_token];
+    }
+
+    modifier multiSigners(uint64 requestNonce)
+    {
+        require(msg.sender == owner() || signers[msg.sender] > 0);
+        require(handleNonces[msg.sender] == requestNonce, "mismatched handle / request nonce");
+        if (signedTxs[requestNonce][msg.sender] == 0) {
+            signedTxs[requestNonce][msg.sender] = 1;
+            signedTxsCount[requestNonce]++;
+        }
+        _;
+    }
+
+    function checkSigners(uint64 requestNonce) internal returns(bool) {
+        if (signedTxsCount[requestNonce] >= signerThreshold) {
+            return true;
+        }
+        return false;
     }
 
     // handleERC20Transfer sends the token by the request.
@@ -112,9 +149,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         uint64 _requestBlockNumber
     )
         external
-        onlyOwner
+        multiSigners(_requestNonce)
     {
-        require(handleNonces[msg.sender] == _requestNonce, "mismatched handle / request nonce");
+        if (!checkSigners(_requestNonce)) {
+           return;
+        }
 
         emit HandleValueTransfer(_to, TokenKind.ERC20, _contractAddress, _amount, handleNonces[msg.sender]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
@@ -135,9 +174,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         uint64 _requestBlockNumber
     )
         external
-        onlyOwner
+        multiSigners(_requestNonce)
     {
-        require(handleNonces[msg.sender] == _requestNonce, "mismatched handle / request nonce");
+        if (!checkSigners(_requestNonce)) {
+            return;
+        }
 
         emit HandleValueTransfer(_to, TokenKind.KLAY, address(0), _amount, handleNonces[msg.sender]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
@@ -156,9 +197,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         string _tokenURI
     )
         external
-        onlyOwner
+        multiSigners(_requestNonce)
     {
-        require(handleNonces[msg.sender] == _requestNonce, "mismatched handle / request nonce");
+        if (!checkSigners(_requestNonce)) {
+            return;
+        }
 
         emit HandleValueTransfer(_to, TokenKind.ERC721, _contractAddress, _uid, handleNonces[msg.sender]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
