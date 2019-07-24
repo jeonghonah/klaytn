@@ -27,15 +27,6 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
 
     using SafeMath for uint256;
 
-    mapping (address => uint64) public requestNonces; // <signer, nonce>
-    mapping (address => uint64) public handleNonces;  // <signer, nonce>
-    mapping (address => uint64) public signers;       // <signer, nonce>
-    mapping (bytes32 => mapping (address => uint64)) public signedTxs; // <nonce, <singer, vote>>
-    mapping (bytes32 => uint64) public signedTxsCount; // <tx, nonce>
-    uint64 public signerThreshold = 1;
-
-    uint64 public lastHandledRequestBlockNumber;
-
     enum TokenKind {
         KLAY,
         ERC20,
@@ -54,6 +45,17 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         Stop,
         SetCounterPartBridge
     }
+
+    mapping (uint64 => uint64) public requestNonces; // <tx kind, nonce>
+    mapping (uint64 => uint64) public handleNonces;  // <tx kind, nonce>
+    mapping (address => uint64) public signers;    // <signer, nonce>
+    mapping (bytes32 => mapping (address => uint64)) public signedTxs; // <sha3(kind, nonce), <singer, vote>>
+    mapping (bytes32 => uint64) public signedTxsCount; // <sha3(kind, nonce), nonce>
+    uint64 public signerThreshold = 1;
+
+    uint64 public lastHandledRequestBlockNumber;
+
+
 
     // TODO-Klaytn-Service FeeReceiver should be passed by argument of constructor.
     constructor (bool _modeMintBurn) BridgeFee(address(0)) public payable {
@@ -137,21 +139,26 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
 
     modifier multiSigners(uint64 requestNonce)
     {
-        require(msg.sender == owner() || signers[msg.sender] > 0);
+        require(tx.origin == owner() || signers[tx.origin] > 0);
         _;
     }
 
     function checkSigners(TransactionKind kind, uint64 requestNonce) internal returns(bool) {
-        require(handleNonces[msg.sender] == requestNonce, "mismatched handle / request nonce");
-        bytes32 hash = keccak256(kind, requestNonce);
+        require(handleNonces[uint64(TransactionKind.ValueTransfer)] == requestNonce, "mismatched handle / request nonce");
 
-        if (signedTxs[hash][msg.sender] == 0) {
-            signedTxs[hash][msg.sender] = 1;
-            signedTxsCount[hash]++;
+        bytes32 hash = keccak256(abi.encodePacked(uint(kind), requestNonce));
+
+        if (signedTxs[hash][tx.origin] != 0) {
+            return false;
         }
-        if (signedTxsCount[hash] >= signerThreshold) {
+
+        signedTxs[hash][tx.origin] = requestNonce;
+        signedTxsCount[hash]++;
+
+        if (signedTxsCount[hash] == signerThreshold) {
             return true;
         }
+
         return false;
     }
 
@@ -167,12 +174,12 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         multiSigners(_requestNonce)
     {
         if (!checkSigners(TransactionKind.ValueTransfer, _requestNonce)) {
-           return;
+            return;
         }
 
-        emit HandleValueTransfer(_to, TokenKind.ERC20, _contractAddress, _amount, handleNonces[msg.sender]);
+        emit HandleValueTransfer(_to, TokenKind.ERC20, _contractAddress, _amount, handleNonces[uint64(TransactionKind.ValueTransfer)]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
-        handleNonces[msg.sender]++;
+        handleNonces[uint64(TransactionKind.ValueTransfer)]++;
 
         if (modeMintBurn) {
             ERC20Mintable(_contractAddress).mint(_to, _amount);
@@ -195,11 +202,10 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             return;
         }
 
-        emit HandleValueTransfer(_to, TokenKind.KLAY, address(0), _amount, handleNonces[msg.sender]);
+        emit HandleValueTransfer(_to, TokenKind.KLAY, address(0), _amount, handleNonces[uint64(TransactionKind.ValueTransfer)]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
-        handleNonces[msg.sender]++;
-
         _to.transfer(_amount);
+        handleNonces[uint64(TransactionKind.ValueTransfer)]++;
     }
 
     // handleERC721Transfer sends the NFT by the request.
@@ -218,9 +224,9 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             return;
         }
 
-        emit HandleValueTransfer(_to, TokenKind.ERC721, _contractAddress, _uid, handleNonces[msg.sender]);
+        emit HandleValueTransfer(_to, TokenKind.ERC721, _contractAddress, _uid, handleNonces[uint64(TransactionKind.ValueTransfer)]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
-        handleNonces[msg.sender]++;
+        handleNonces[uint64(TransactionKind.ValueTransfer)]++;
 
         if (modeMintBurn) {
             ERC721MetadataMintable(_contractAddress).mintWithTokenURI(_to, _uid, _tokenURI);
@@ -242,11 +248,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             msg.value.sub(_feeLimit),
             address(0),
             _to,
-            requestNonces[owner()],
+            requestNonces[uint64(TransactionKind.ValueTransfer)],
             "",
             fee
         );
-        requestNonces[owner()]++;
+        requestNonces[uint64(TransactionKind.ValueTransfer)]++;
     }
 
     // () requests transfer KLAY to msg.sender address on relative chain.
@@ -278,11 +284,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             _amount,
             _contractAddress,
             _to,
-            requestNonces[owner()],
+            requestNonces[uint64(TransactionKind.ValueTransfer)],
             "",
             fee
         );
-        requestNonces[owner()]++;
+        requestNonces[uint64(TransactionKind.ValueTransfer)]++;
     }
 
     // Receiver function of ERC20 token for 1-step deposits to the Bridge
@@ -320,11 +326,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             _uid,
             _contractAddress,
             _to,
-            requestNonces[owner()],
+            requestNonces[uint64(TransactionKind.ValueTransfer)],
             uri,
             0
         );
-        requestNonces[owner()]++;
+        requestNonces[uint64(TransactionKind.ValueTransfer)]++;
     }
 
     // Receiver function of ERC721 token for 1-step deposits to the Bridge

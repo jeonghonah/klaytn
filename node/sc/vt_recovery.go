@@ -197,13 +197,13 @@ func updateRecoveryHintFromTo(prevHint *valueTransferHint, from, to *BridgeInfo)
 		return nil, err
 	}
 
-	requestNonce, err := from.bridge.RequestNonces(nil, from.account.address)
+	requestNonce, err := from.bridge.RequestNonces(nil, TxKindValueTransfer)
 	if err != nil {
 		return nil, err
 	}
 	hint.requestNonce = requestNonce
 
-	handleNonce, err := to.bridge.HandleNonces(nil, to.account.address)
+	handleNonce, err := to.bridge.HandleNonces(nil, TxKindValueTransfer)
 	if err != nil {
 		return nil, err
 	}

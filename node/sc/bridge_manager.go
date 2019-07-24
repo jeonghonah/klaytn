@@ -46,6 +46,10 @@ const (
 	NFT
 )
 
+const (
+	TxKindValueTransfer = iota
+)
+
 var (
 	ErrInvalidTokenPair     = errors.New("invalid token pair")
 	ErrNoBridgeInfo         = errors.New("bridge information does not exist")
@@ -250,13 +254,13 @@ func (bi *BridgeInfo) UpdateInfo() error {
 		return ErrNoBridgeInfo
 	}
 
-	rn, err := bi.bridge.RequestNonces(nil, bi.account.address)
+	rn, err := bi.bridge.RequestNonces(nil, TxKindValueTransfer)
 	if err != nil {
 		return err
 	}
 	bi.UpdateRequestNonce(rn)
 
-	hn, err := bi.bridge.HandleNonces(nil, bi.account.address)
+	hn, err := bi.bridge.HandleNonces(nil, TxKindValueTransfer)
 	if err != nil {
 		return err
 	}
