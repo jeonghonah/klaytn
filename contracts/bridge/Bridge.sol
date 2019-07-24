@@ -30,8 +30,8 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
     mapping (address => uint64) public requestNonces; // <signer, nonce>
     mapping (address => uint64) public handleNonces;  // <signer, nonce>
     mapping (address => uint64) public signers;       // <signer, nonce>
-    mapping (uint64 => mapping (address => uint64)) public signedTxs; // <nonce, <singer, vote>>
-    mapping (uint64 => uint64) public signedTxsCount; // <tx, nonce>
+    mapping (bytes32 => mapping (address => uint64)) public signedTxs; // <nonce, <singer, vote>>
+    mapping (bytes32 => uint64) public signedTxsCount; // <tx, nonce>
     uint64 public signerThreshold = 1;
 
     uint64 public lastHandledRequestBlockNumber;
@@ -40,6 +40,19 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         KLAY,
         ERC20,
         ERC721
+    }
+
+    enum TransactionKind {
+        ValueTransfer,
+        FeeUpdate,
+        OwnershipTransfer,
+        RegisterSigner,
+        DeregisterSigner,
+        RegisterToken,
+        DeregisterToken,
+        Start,
+        Stop,
+        SetCounterPartBridge
     }
 
     // TODO-Klaytn-Service FeeReceiver should be passed by argument of constructor.
@@ -125,16 +138,18 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
     modifier multiSigners(uint64 requestNonce)
     {
         require(msg.sender == owner() || signers[msg.sender] > 0);
-        require(handleNonces[msg.sender] == requestNonce, "mismatched handle / request nonce");
-        if (signedTxs[requestNonce][msg.sender] == 0) {
-            signedTxs[requestNonce][msg.sender] = 1;
-            signedTxsCount[requestNonce]++;
-        }
         _;
     }
 
-    function checkSigners(uint64 requestNonce) internal returns(bool) {
-        if (signedTxsCount[requestNonce] >= signerThreshold) {
+    function checkSigners(TransactionKind kind, uint64 requestNonce) internal returns(bool) {
+        require(handleNonces[msg.sender] == requestNonce, "mismatched handle / request nonce");
+        bytes32 hash = keccak256(kind, requestNonce);
+
+        if (signedTxs[hash][msg.sender] == 0) {
+            signedTxs[hash][msg.sender] = 1;
+            signedTxsCount[hash]++;
+        }
+        if (signedTxsCount[hash] >= signerThreshold) {
             return true;
         }
         return false;
@@ -151,7 +166,7 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         external
         multiSigners(_requestNonce)
     {
-        if (!checkSigners(_requestNonce)) {
+        if (!checkSigners(TransactionKind.ValueTransfer, _requestNonce)) {
            return;
         }
 
@@ -176,7 +191,7 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         external
         multiSigners(_requestNonce)
     {
-        if (!checkSigners(_requestNonce)) {
+        if (!checkSigners(TransactionKind.ValueTransfer, _requestNonce)) {
             return;
         }
 
@@ -199,7 +214,7 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         external
         multiSigners(_requestNonce)
     {
-        if (!checkSigners(_requestNonce)) {
+        if (!checkSigners(TransactionKind.ValueTransfer, _requestNonce)) {
             return;
         }
 
