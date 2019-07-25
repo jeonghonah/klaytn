@@ -48,7 +48,7 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
 
     mapping (uint64 => uint64) public requestNonces; // <tx kind, nonce>
     mapping (uint64 => uint64) public handleNonces;  // <tx kind, nonce>
-    mapping (address => uint64) public signers;    // <signer, nonce>
+    mapping (address => bool) public signers;    // <signer, nonce>
     mapping (bytes32 => mapping (address => uint64)) public signedTxs; // <sha3(kind, nonce), <singer, vote>>
     mapping (bytes32 => uint64) public signedTxsCount; // <sha3(kind, nonce), nonce>
     uint64 public signerThreshold = 1;
@@ -119,7 +119,7 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
 
     // registerSigner registers new signer.
     function registerSigner(address signer) external onlyOwner {
-        signers[signer] = 1;
+        signers[signer] = true;
     }
 
     // deregisterSigner deregisters a signer.
@@ -137,15 +137,19 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         delete allowedTokens[_token];
     }
 
-    modifier multiSigners(uint64 requestNonce)
+    modifier multiSigners()
     {
-        require(tx.origin == owner() || signers[tx.origin] > 0);
+        require(tx.origin == owner() || signers[tx.origin], "invalid signer");
+//        if (tx.origin != owner() && !signers[tx.origin]) {
+//            revert();
+//        }
         _;
     }
 
-    function checkSigners(TransactionKind kind, uint64 requestNonce) internal returns(bool) {
-        require(handleNonces[uint64(TransactionKind.ValueTransfer)] == requestNonce, "mismatched handle / request nonce");
-
+    // FIXME: need to accept hash for checking tx contents
+    // do not process request nonce sequentially.
+    function isFirstSigners(TransactionKind kind, uint64 requestNonce) internal returns(bool) {
+        //require(handleNonces[uint64(TransactionKind.ValueTransfer)] == requestNonce, "mismatched handle / request nonce");
         bytes32 hash = keccak256(abi.encodePacked(uint(kind), requestNonce));
 
         if (signedTxs[hash][tx.origin] != 0) {
@@ -162,6 +166,28 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         return false;
     }
 
+    // handleKLAYTransfer sends the KLAY by the request.
+    function handleKLAYTransfer(
+        uint256 _amount,
+        address _to,
+        uint64 _requestNonce,
+        uint64 _requestBlockNumber
+    )
+        external
+        multiSigners
+    {
+        if (!isFirstSigners(TransactionKind.ValueTransfer, _requestNonce)) {
+            return;
+        }
+
+        emit HandleValueTransfer(_to, TokenKind.KLAY, address(0), _amount, handleNonces[uint64(TransactionKind.ValueTransfer)]);
+        _to.transfer(_amount);
+
+        // need to be global min.
+        lastHandledRequestBlockNumber = _requestBlockNumber;
+        handleNonces[uint64(TransactionKind.ValueTransfer)]++;
+    }
+
     // handleERC20Transfer sends the token by the request.
     function handleERC20Transfer(
         uint256 _amount,
@@ -171,9 +197,9 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         uint64 _requestBlockNumber
     )
         external
-        multiSigners(_requestNonce)
+        multiSigners
     {
-        if (!checkSigners(TransactionKind.ValueTransfer, _requestNonce)) {
+        if (!isFirstSigners(TransactionKind.ValueTransfer, _requestNonce)) {
             return;
         }
 
@@ -188,26 +214,6 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         }
     }
 
-    // handleKLAYTransfer sends the KLAY by the request.
-    function handleKLAYTransfer(
-        uint256 _amount,
-        address _to,
-        uint64 _requestNonce,
-        uint64 _requestBlockNumber
-    )
-        external
-        multiSigners(_requestNonce)
-    {
-        if (!checkSigners(TransactionKind.ValueTransfer, _requestNonce)) {
-            return;
-        }
-
-        emit HandleValueTransfer(_to, TokenKind.KLAY, address(0), _amount, handleNonces[uint64(TransactionKind.ValueTransfer)]);
-        lastHandledRequestBlockNumber = _requestBlockNumber;
-        _to.transfer(_amount);
-        handleNonces[uint64(TransactionKind.ValueTransfer)]++;
-    }
-
     // handleERC721Transfer sends the NFT by the request.
     function handleERC721Transfer(
         uint256 _uid,
@@ -218,9 +224,9 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         string _tokenURI
     )
         external
-        multiSigners(_requestNonce)
+        multiSigners
     {
-        if (!checkSigners(TransactionKind.ValueTransfer, _requestNonce)) {
+        if (!isFirstSigners(TransactionKind.ValueTransfer, _requestNonce)) {
             return;
         }
 

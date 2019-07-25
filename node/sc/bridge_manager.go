@@ -230,6 +230,7 @@ func (bi *BridgeInfo) processingPendingRequestEvents() error {
 			logger.Trace("past requests are ignored", "RequestNonce", ev.RequestNonce, "handleNonce", bi.handleNonce)
 			continue
 		}
+		logger.Trace("handle value transfer event", "evt", ev)
 
 		if ev.RequestNonce > bi.handleNonce+maxPendingNonceDiff {
 			logger.Trace("nonce diff is too large", "limitation", maxPendingNonceDiff)
