@@ -33,29 +33,20 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         ERC721
     }
 
-    enum TransactionKind {
+    enum TransactionType {
         ValueTransfer,
-        FeeUpdate,
-        OwnershipTransfer,
-        RegisterSigner,
-        DeregisterSigner,
-        RegisterToken,
-        DeregisterToken,
-        Start,
-        Stop,
-        SetCounterPartBridge
+        Governance
     }
 
-    mapping (uint64 => uint64) public requestNonces; // <tx kind, nonce>
-    mapping (uint64 => uint64) public handleNonces;  // <tx kind, nonce>
+    mapping (uint64 => uint64) public requestNonces; // <tx type, nonce>
+    mapping (uint64 => uint64) public handleNonces;  // <tx type, nonce>
     mapping (address => bool) public signers;    // <signer, nonce>
-    mapping (bytes32 => mapping (address => uint64)) public signedTxs; // <sha3(kind, nonce), <singer, vote>>
-    mapping (bytes32 => uint64) public signedTxsCount; // <sha3(kind, nonce), nonce>
+    mapping (bytes32 => mapping (address => uint64)) public signedTxs; // <sha3(type, args, nonce), <singer, vote>>
+    mapping (bytes32 => uint64) public signedTxsCount; // <sha3(type, args, nonce)>
+    mapping (bytes32 => uint64) public committedTxs; // <sha3(type, nonce)>
     uint64 public signerThreshold = 1;
 
     uint64 public lastHandledRequestBlockNumber;
-
-
 
     // TODO-Klaytn-Service FeeReceiver should be passed by argument of constructor.
     constructor (bool _modeMintBurn) BridgeFee(address(0)) public payable {
@@ -97,73 +88,99 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         uint256 value,
         uint64 handleNonce);
 
-    // start allows the value transfer request.
-    function start() external onlyOwner {
-        isRunning = true;
-    }
-
-    // stop prevent the value transfer request.
-    function stop() external onlyOwner {
-        isRunning = false;
-    }
-
-    // stop prevent the value transfer request.
-    function setCounterPartBridge(address _bridge) external onlyOwner {
-        counterpartBridge = _bridge;
-    }
-
-    // setSignerThreshold sets signer threshold.
-    function setSignerThreshold(uint64 threshold) external onlyOwner {
-        signerThreshold = threshold;
-    }
-
-    // registerSigner registers new signer.
-    function registerSigner(address signer) external onlyOwner {
-        signers[signer] = true;
-    }
-
-    // deregisterSigner deregisters a signer.
-    function deregisterSigner(address signer) external onlyOwner {
-        delete signers[signer];
-    }
-
-    // registerToken can update the allowed token with the counterpart token.
-    function registerToken(address _token, address _cToken) external onlyOwner {
-        allowedTokens[_token] = _cToken;
-    }
-
-    // deregisterToken can remove the token in allowedToken list.
-    function deregisterToken(address _token) external onlyOwner {
-        delete allowedTokens[_token];
-    }
-
-    modifier multiSigners()
+    modifier onlySigners()
     {
-        require(tx.origin == owner() || signers[tx.origin], "invalid signer");
-//        if (tx.origin != owner() && !signers[tx.origin]) {
-//            revert();
-//        }
+        require(msg.sender == owner() || signers[msg.sender], "invalid signer");
         _;
     }
 
-    // FIXME: need to accept hash for checking tx contents
-    // do not process request nonce sequentially.
-    function isFirstSigners(TransactionKind kind, uint64 requestNonce) internal returns(bool) {
-        //require(handleNonces[uint64(TransactionKind.ValueTransfer)] == requestNonce, "mismatched handle / request nonce");
-        bytes32 hash = keccak256(abi.encodePacked(uint(kind), requestNonce));
+    modifier onlySequentialNonce(uint64 _txType, uint64 _requestNonce)
+    {
+        require(requestNonces[_txType] == _requestNonce, "mismatched handle / request nonce");
+        _;
+    }
 
-        if (signedTxs[hash][tx.origin] != 0) {
+    // voteValueTransfer votes value transfer transaction with the signer.
+    function voteValueTransfer(bytes32 _txKey, bytes32 _voteKey, address _signer) internal returns(bool) {
+        if (committedTxs[_txKey] != 0 || signedTxs[_voteKey][_signer] != 0) {
             return false;
         }
 
-        signedTxs[hash][tx.origin] = requestNonce;
-        signedTxsCount[hash]++;
+        signedTxs[_voteKey][_signer] = 1;
+        signedTxsCount[_voteKey]++;
 
-        if (signedTxsCount[hash] == signerThreshold) {
+        if (signedTxsCount[_voteKey] == signerThreshold) {
+            committedTxs[_txKey] = 1;
             return true;
         }
 
         return false;
+    }
+
+    // voteGovernance votes contract governance transaction with the signer.
+    // It does not need to check committedTxs since onlySequentialNonce checks it already with harder condition.
+    function voteGovernance(bytes32 _voteKey, address _signer) internal returns(bool) {
+        if (signedTxs[_voteKey][_signer] != 0) {
+            return false;
+        }
+
+        signedTxs[_voteKey][_signer] = 1;
+        signedTxsCount[_voteKey]++;
+
+        if (signedTxsCount[_voteKey] == signerThreshold) {
+            return true;
+        }
+
+        return false;
+    }
+
+    // start allows the value transfer request.
+    function start() external onlySigners {
+        isRunning = true;
+    }
+
+    // stop prevent the value transfer request.
+    function stop() external onlySigners {
+        isRunning = false;
+    }
+
+    // stop prevent the value transfer request.
+    function setCounterPartBridge(address _bridge) external onlySigners {
+        counterpartBridge = _bridge;
+    }
+
+    // setSignerThreshold sets signer threshold.
+    function setSignerThreshold(uint64 _threshold, uint64 _requestNonce)
+        external
+        onlySigners
+        onlySequentialNonce(uint64(TransactionType.Governance), _requestNonce)
+    {
+        bytes32 voteKey = keccak256(abi.encodePacked(TransactionType.Governance, _threshold, _requestNonce));
+        if (!voteGovernance(voteKey, msg.sender)) {
+            return;
+        }
+        signerThreshold = _threshold;
+        requestNonces[uint64(TransactionType.Governance)]++;
+    }
+
+    // registerSigner registers new signer.
+    function registerSigner(address _signer) external onlySigners {
+        signers[_signer] = true;
+    }
+
+    // deregisterSigner deregisters a signer.
+    function deregisterSigner(address _signer) external onlySigners {
+        delete signers[_signer];
+    }
+
+    // registerToken can update the allowed token with the counterpart token.
+    function registerToken(address _token, address _cToken) external onlySigners {
+        allowedTokens[_token] = _cToken;
+    }
+
+    // deregisterToken can remove the token in allowedToken list.
+    function deregisterToken(address _token) external onlySigners {
+        delete allowedTokens[_token];
     }
 
     // handleKLAYTransfer sends the KLAY by the request.
@@ -174,18 +191,20 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         uint64 _requestBlockNumber
     )
         external
-        multiSigners
+        onlySigners
     {
-        if (!isFirstSigners(TransactionKind.ValueTransfer, _requestNonce)) {
+        bytes32 txKey = keccak256(abi.encodePacked(TransactionType.ValueTransfer, _requestNonce));
+        bytes32 voteKey = keccak256(abi.encodePacked(TransactionType.ValueTransfer, _amount, _to, _requestNonce, _requestBlockNumber));
+        if (!voteValueTransfer(txKey, voteKey, msg.sender)) {
             return;
         }
 
-        emit HandleValueTransfer(_to, TokenKind.KLAY, address(0), _amount, handleNonces[uint64(TransactionKind.ValueTransfer)]);
+        emit HandleValueTransfer(_to, TokenKind.KLAY, address(0), _amount, handleNonces[uint64(TransactionType.ValueTransfer)]);
         _to.transfer(_amount);
 
         // need to be global min.
         lastHandledRequestBlockNumber = _requestBlockNumber;
-        handleNonces[uint64(TransactionKind.ValueTransfer)]++;
+        handleNonces[uint64(TransactionType.ValueTransfer)]++;
     }
 
     // handleERC20Transfer sends the token by the request.
@@ -197,15 +216,17 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         uint64 _requestBlockNumber
     )
         external
-        multiSigners
+        onlySigners
     {
-        if (!isFirstSigners(TransactionKind.ValueTransfer, _requestNonce)) {
+        bytes32 txKey = keccak256(abi.encodePacked(TransactionType.ValueTransfer, _requestNonce));
+        bytes32 voteKey = keccak256(abi.encodePacked(TransactionType.ValueTransfer, _amount, _to, _contractAddress, _requestNonce, _requestBlockNumber));
+        if (!voteValueTransfer(txKey, voteKey, msg.sender)) {
             return;
         }
 
-        emit HandleValueTransfer(_to, TokenKind.ERC20, _contractAddress, _amount, handleNonces[uint64(TransactionKind.ValueTransfer)]);
+        emit HandleValueTransfer(_to, TokenKind.ERC20, _contractAddress, _amount, handleNonces[uint64(TransactionType.ValueTransfer)]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
-        handleNonces[uint64(TransactionKind.ValueTransfer)]++;
+        handleNonces[uint64(TransactionType.ValueTransfer)]++;
 
         if (modeMintBurn) {
             ERC20Mintable(_contractAddress).mint(_to, _amount);
@@ -224,15 +245,17 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
         string _tokenURI
     )
         external
-        multiSigners
+        onlySigners
     {
-        if (!isFirstSigners(TransactionKind.ValueTransfer, _requestNonce)) {
+        bytes32 txKey = keccak256(abi.encodePacked(TransactionType.ValueTransfer, _requestNonce));
+        bytes32 voteKey = keccak256(abi.encodePacked(TransactionType.ValueTransfer, _uid, _to, _contractAddress, _requestNonce, _requestBlockNumber, _tokenURI));
+        if (!voteValueTransfer(txKey, voteKey, msg.sender)) {
             return;
         }
 
-        emit HandleValueTransfer(_to, TokenKind.ERC721, _contractAddress, _uid, handleNonces[uint64(TransactionKind.ValueTransfer)]);
+        emit HandleValueTransfer(_to, TokenKind.ERC721, _contractAddress, _uid, handleNonces[uint64(TransactionType.ValueTransfer)]);
         lastHandledRequestBlockNumber = _requestBlockNumber;
-        handleNonces[uint64(TransactionKind.ValueTransfer)]++;
+        handleNonces[uint64(TransactionType.ValueTransfer)]++;
 
         if (modeMintBurn) {
             ERC721MetadataMintable(_contractAddress).mintWithTokenURI(_to, _uid, _tokenURI);
@@ -254,11 +277,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             msg.value.sub(_feeLimit),
             address(0),
             _to,
-            requestNonces[uint64(TransactionKind.ValueTransfer)],
+            requestNonces[uint64(TransactionType.ValueTransfer)],
             "",
             fee
         );
-        requestNonces[uint64(TransactionKind.ValueTransfer)]++;
+        requestNonces[uint64(TransactionType.ValueTransfer)]++;
     }
 
     // () requests transfer KLAY to msg.sender address on relative chain.
@@ -290,11 +313,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             _amount,
             _contractAddress,
             _to,
-            requestNonces[uint64(TransactionKind.ValueTransfer)],
+            requestNonces[uint64(TransactionType.ValueTransfer)],
             "",
             fee
         );
-        requestNonces[uint64(TransactionKind.ValueTransfer)]++;
+        requestNonces[uint64(TransactionType.ValueTransfer)]++;
     }
 
     // Receiver function of ERC20 token for 1-step deposits to the Bridge
@@ -332,11 +355,11 @@ contract Bridge is IERC20BridgeReceiver, IERC721BridgeReceiver, Ownable, BridgeF
             _uid,
             _contractAddress,
             _to,
-            requestNonces[uint64(TransactionKind.ValueTransfer)],
+            requestNonces[uint64(TransactionType.ValueTransfer)],
             uri,
             0
         );
-        requestNonces[uint64(TransactionKind.ValueTransfer)]++;
+        requestNonces[uint64(TransactionType.ValueTransfer)]++;
     }
 
     // Receiver function of ERC721 token for 1-step deposits to the Bridge
