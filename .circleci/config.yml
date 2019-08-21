@@ -11,10 +11,21 @@ jobs:
       - run:
           name: "Build"
           command: |
+            # install go
             curl -O https://dl.google.com/go/go1.12.5.linux-amd64.tar.gz
             mkdir $HOME/go1.12.5
             tar -C $HOME/go1.12.5 -xzf go1.12.5.linux-amd64.tar.gz
             export PATH=$HOME/go1.12.5/go/bin:$PATH
+
+            # set go env
+            export GOPATH=$HOME/go
+            export GO111MODULE=on
+
+            # run package commands
+            go mod tidy
+            go mod vendor -v
+
+            # build
             make fmt
             make all
 
@@ -22,8 +33,15 @@ jobs:
     docker:
       - image: klaytn/build_base:1.0
     working_directory: /go/src/github.com/klaytn/klaytn
+    environment:
+      GO111MODULE: "on"
     steps:
       - checkout
+      - run:
+          name: Run package commands
+          command: |
+            go mod tidy
+            go mod vendor -v
       - run:
           name: "Run test datasync"
           command: |
@@ -33,8 +51,15 @@ jobs:
     docker:
       - image: klaytn/build_base:1.0
     working_directory: /go/src/github.com/klaytn/klaytn
+    environment:
+      GO111MODULE: "on"
     steps:
       - checkout
+      - run:
+          name: Run package commands
+          command: |
+            go mod tidy
+            go mod vendor -v
       - run:
           name: "Run test networks"
           command: |
@@ -44,8 +69,15 @@ jobs:
     docker:
       - image: klaytn/build_base:1.0
     working_directory: /go/src/github.com/klaytn/klaytn
+    environment:
+      GO111MODULE: "on"
     steps:
       - checkout
+      - run:
+          name: Run package commands
+          command: |
+            go mod tidy
+            go mod vendor -v
       - run:
           name: "Run test tests"
           command: |
@@ -56,8 +88,15 @@ jobs:
     docker:
       - image: klaytn/build_base:1.0
     working_directory: /go/src/github.com/klaytn/klaytn
+    environment:
+      GO111MODULE: "on"
     steps:
       - checkout
+      - run:
+          name: Run package commands
+          command: |
+            go mod tidy
+            go mod vendor -v
       - run:
           name: "Run test others"
           command: |

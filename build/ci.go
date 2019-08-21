@@ -24,7 +24,6 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"github.com/klaytn/klaytn/utils/build"
 	"go/parser"
 	"go/token"
 	"io/ioutil"
@@ -37,9 +36,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/klaytn/klaytn/utils/build"
 )
 
 var (
+
 	// Files that end up in the klay*.zip archive.
 	klayArchiveFiles = []string{
 		"COPYING",
@@ -325,17 +327,16 @@ func doFmt(cmdline []string) {
 		packages = flag.CommandLine.Args()
 	}
 	// Get metalinter and install all supported linters
-	build.MustRun(goTool("get", "gopkg.in/alecthomas/gometalinter.v2"))
-	build.MustRunCommand(filepath.Join(GOBIN, "gometalinter.v2"), "--install")
+	build.MustRun(goTool("get", "github.com/golangci/golangci-lint/cmd/golangci-lint"))
 
 	// Run fast linters batched together
 	configs := []string{
-		"--vendor",
-		//"--tests",
+		"run",
+		"--tests",
 		"--disable-all",
 		"--enable=gofmt",
 	}
-	build.MustRunCommand(filepath.Join(GOBIN, "gometalinter.v2"), append(configs, packages...)...)
+	build.MustRunCommand(filepath.Join(GOBIN, "golangci-lint"), append(configs, packages...)...)
 }
 
 // runs gometalinter on requested packages and exits immediately when linter warning observed if exitOnError is true
@@ -347,8 +348,7 @@ func doLint(cmdline []string, exitOnError bool) {
 		packages = flag.CommandLine.Args()
 	}
 	// Get metalinter and install all supported linters
-	build.MustRun(goTool("get", "gopkg.in/alecthomas/gometalinter.v2"))
-	build.MustRunCommand(filepath.Join(GOBIN, "gometalinter.v2"), "--install")
+	build.MustRun(goTool("get", "github.com/golangci/golangci-lint/cmd/golangci-lint"))
 
 	// Prepare a report file for linters
 	fname := "linter_report.txt"
@@ -364,15 +364,14 @@ func doLint(cmdline []string, exitOnError bool) {
 
 	// Run fast linters batched together
 	configs := []string{
-		"--vendor",
+		"run",
 		"--tests",
 		"--disable-all",
 		"--enable=varcheck",
 		"--enable=misspell",
 		"--enable=goconst",
-		"--min-occurrences=6", // for goconst
 	}
-	cmd := filepath.Join(GOBIN, "gometalinter.v2")
+	cmd := filepath.Join(GOBIN, "golangci-lint")
 	args := append(configs, packages...)
 	if exitOnError {
 		build.MustRunCommand(cmd, args...)
@@ -382,7 +381,7 @@ func doLint(cmdline []string, exitOnError bool) {
 
 	// Run fast linters batched together
 	configs = []string{
-		"--vendor",
+		"run",
 		"--tests",
 		"--disable-all",
 		"--enable=deadcode",
@@ -393,7 +392,7 @@ func doLint(cmdline []string, exitOnError bool) {
 		"--enable=unparam",
 		"--enable=unused",
 	}
-	cmd = filepath.Join(GOBIN, "gometalinter.v2")
+	cmd = filepath.Join(GOBIN, "golangci-lint")
 	args = append(configs, packages...)
 	if exitOnError {
 		build.MustRunCommand(cmd, args...)
@@ -403,8 +402,8 @@ func doLint(cmdline []string, exitOnError bool) {
 
 	// Run slow linters one by one
 	for _, linter := range []string{"unconvert", "gosimple", "staticcheck", "gocyclo"} {
-		configs = []string{"--vendor", "--tests", "--deadline=10m", "--disable-all", "--enable=" + linter}
-		cmd = filepath.Join(GOBIN, "gometalinter.v2")
+		configs = []string{"run", "--tests", "--deadline=10m", "--disable-all", "--enable=" + linter}
+		cmd = filepath.Join(GOBIN, "golangci-lint")
 		args = append(configs, packages...)
 		if exitOnError {
 			build.MustRunCommand(cmd, args...)
