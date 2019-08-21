@@ -445,6 +445,7 @@ func RpcOutputBlock(b *types.Block, td *big.Int, inclTx bool, fullTx bool) (map[
 		"timestampFoS":     (hexutil.Uint)(head.TimeFoS),
 		"transactionsRoot": head.TxHash,
 		"receiptsRoot":     head.ReceiptHash,
+		"gasLimit":         hexutil.Uint64(8000000), // dummy value for client compatibility
 	}
 
 	if inclTx {
