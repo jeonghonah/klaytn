@@ -377,11 +377,7 @@ func (bi *BridgeInfo) GetReadyRequestValueTransferEvents() []*RequestValueTransf
 
 // GetCurrentBlockNumber returns a current block number for each local and remote backend.
 func (bi *BridgeInfo) GetCurrentBlockNumber() (uint64, error) {
-
-	if bi.onChildChain {
-		return bi.subBridge.blockchain.CurrentBlock().NumberU64(), nil
-	}
-	return bi.subBridge.remoteBackend.(RemoteBackendInterface).CurrentBlockNumber()
+	return bi.subBridge.remoteBackend.CurrentBlockNumber(context.Background())
 }
 
 // DecodeRLP decodes the Klaytn
@@ -690,7 +686,7 @@ func (bm *BridgeManager) AddRecovery(localAddress, remoteAddress common.Address)
 	}
 
 	// Create and start value transfer recovery.
-	recovery := NewValueTransferRecovery(bm.subBridge, localBridgeInfo, remoteBridgeInfo)
+	recovery := NewValueTransferRecovery(bm.subBridge.config, localBridgeInfo, remoteBridgeInfo)
 	recovery.Start()
 	bm.recoveries[localAddress] = recovery // suppose local/remote is always a pair.
 	return nil

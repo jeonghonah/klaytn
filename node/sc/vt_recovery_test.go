@@ -574,6 +574,8 @@ func prepare(t *testing.T, vtcallback func(*testInfo)) *testInfo {
 		config:         config,
 		peers:          newBridgePeerSet(),
 		bridgeAccounts: bacc,
+		localBackend:   sim,
+		remoteBackend:  sim,
 	}
 	handler, err := NewSubBridgeHandler(sc)
 	if err != nil {
@@ -581,6 +583,7 @@ func prepare(t *testing.T, vtcallback func(*testInfo)) *testInfo {
 		return nil
 	}
 	sc.handler = handler
+	sc.blockchain = sim.BlockChain()
 
 	// Prepare manager and deploy bridge contract.
 	bm, err := NewBridgeManager(sc)

@@ -270,7 +270,7 @@ func retrievePendingEventsFrom(hint *valueTransferHint, bi *BridgeInfo) ([]*Requ
 			endBlkNum = curBlkNum
 			done = true
 		}
-		opts := &bind.FilterOpts{Start: hint.blockNumber, End: &endBlkNum}
+		opts := &bind.FilterOpts{Start: startBlkNum, End: &endBlkNum}
 		it, err := bi.bridge.FilterRequestValueTransfer(opts)
 		if err != nil {
 			return nil, err

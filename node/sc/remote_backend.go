@@ -199,6 +199,7 @@ func (rb *RemoteBackend) SubscribeFilterLogs(ctx context.Context, query klaytn.F
 	return rb.rpcClient.KlaySubscribe(ctx, ch, "logs", toFilterArg(query))
 }
 
+// CurrentBlockNumber returns a current block number.
 func (rb *RemoteBackend) CurrentBlockNumber(ctx context.Context) (uint64, error) {
 	if !rb.checkParentPeer() {
 		return 0, NoParentPeerErr
