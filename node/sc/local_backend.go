@@ -279,14 +279,6 @@ func (fb *filterLocalBackend) EventMux() *event.TypeMux {
 	return fb.subbridge.EventMux()
 }
 
-func (fb *filterLocalBackend) HeaderByNumber(ctx context.Context, block rpc.BlockNumber) (*types.Header, error) {
-	// TODO-Klaytn consider pendingblock instead of latest block
-	if block == rpc.LatestBlockNumber {
-		return fb.subbridge.blockchain.CurrentHeader(), nil
-	}
-	return fb.subbridge.blockchain.GetHeaderByNumber(uint64(block.Int64())), nil
-}
-
 func (fb *filterLocalBackend) GetBlockReceipts(ctx context.Context, hash common.Hash) types.Receipts {
 	return fb.subbridge.blockchain.GetReceiptsByBlockHash(hash)
 }

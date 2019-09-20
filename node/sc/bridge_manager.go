@@ -82,7 +82,8 @@ type BridgeJournal struct {
 }
 
 type BridgeInfo struct {
-	bridgeDB database.DBManager
+	subBridge *SubBridge
+	bridgeDB  database.DBManager
 
 	address            common.Address
 	counterpartAddress common.Address // TODO-Klaytn need to set counterpart
@@ -106,9 +107,10 @@ type BridgeInfo struct {
 	closed   chan struct{}
 }
 
-func NewBridgeInfo(db database.DBManager, addr common.Address, bridge *bridgecontract.Bridge, cpAddr common.Address, cpBridge *bridgecontract.Bridge, account *accountInfo, local, subscribed bool) (*BridgeInfo, error) {
+func NewBridgeInfo(sb *SubBridge, addr common.Address, bridge *bridgecontract.Bridge, cpAddr common.Address, cpBridge *bridgecontract.Bridge, account *accountInfo, local, subscribed bool) (*BridgeInfo, error) {
 	bi := &BridgeInfo{
-		db,
+		sb,
+		sb.chainDB,
 		addr,
 		cpAddr,
 		account,
@@ -373,6 +375,15 @@ func (bi *BridgeInfo) GetReadyRequestValueTransferEvents() []*RequestValueTransf
 	return bi.GetPendingRequestEvents(bi.nextHandleNonce)
 }
 
+// GetCurrentBlockNumber returns a current block number for each local and remote backend.
+func (bi *BridgeInfo) GetCurrentBlockNumber() (uint64, error) {
+
+	if bi.onChildChain {
+		return bi.subBridge.blockchain.CurrentBlock().NumberU64(), nil
+	}
+	return bi.subBridge.remoteBackend.(RemoteBackendInterface).CurrentBlockNumber()
+}
+
 // DecodeRLP decodes the Klaytn
 func (b *BridgeJournal) DecodeRLP(s *rlp.Stream) error {
 	var elem struct {
@@ -564,7 +575,7 @@ func (bm *BridgeManager) SetBridgeInfo(addr common.Address, bridge *bridgecontra
 		return ErrDuplicatedBridgeInfo
 	}
 	var err error
-	bm.bridges[addr], err = NewBridgeInfo(bm.subBridge.chainDB, addr, bridge, cpAddr, cpBridge, account, local, subscribed)
+	bm.bridges[addr], err = NewBridgeInfo(bm.subBridge, addr, bridge, cpAddr, cpBridge, account, local, subscribed)
 	return err
 }
 
@@ -679,7 +690,7 @@ func (bm *BridgeManager) AddRecovery(localAddress, remoteAddress common.Address)
 	}
 
 	// Create and start value transfer recovery.
-	recovery := NewValueTransferRecovery(bm.subBridge.config, localBridgeInfo, remoteBridgeInfo)
+	recovery := NewValueTransferRecovery(bm.subBridge, localBridgeInfo, remoteBridgeInfo)
 	recovery.Start()
 	bm.recoveries[localAddress] = recovery // suppose local/remote is always a pair.
 	return nil

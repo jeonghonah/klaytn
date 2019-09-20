@@ -62,6 +62,7 @@ const (
 type RemoteBackendInterface interface {
 	bind.ContractBackend
 	TransactionReceiptRpcOutput(ctx context.Context, txHash common.Hash) (map[string]interface{}, error)
+	CurrentBlockNumber() (uint64, error)
 }
 
 // Backend wraps all methods for local and remote backend
