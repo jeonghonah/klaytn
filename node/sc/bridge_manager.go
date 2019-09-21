@@ -377,6 +377,9 @@ func (bi *BridgeInfo) GetReadyRequestValueTransferEvents() []*RequestValueTransf
 
 // GetCurrentBlockNumber returns a current block number for each local and remote backend.
 func (bi *BridgeInfo) GetCurrentBlockNumber() (uint64, error) {
+	if bi.onChildChain {
+		return bi.subBridge.localBackend.CurrentBlockNumber(context.Background())
+	}
 	return bi.subBridge.remoteBackend.CurrentBlockNumber(context.Background())
 }
 
